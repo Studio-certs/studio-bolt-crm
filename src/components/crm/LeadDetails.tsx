@@ -17,6 +17,7 @@ import { supabase } from '../../lib/supabase';
 import { Lead } from '../../types/crm';
 import { LeadChatter } from './LeadChatter';
 import { TodoList } from './TodoList';
+import { LeadNotes } from './LeadNotes';
 import { useAuth } from '../../context/AuthContext';
 
 export const LeadDetails: React.FC = () => {
@@ -297,6 +298,12 @@ export const LeadDetails: React.FC = () => {
                   )}
                 </div>
               )}
+            </div>
+
+            {/* Lead Notes Section */}
+            <div className="bg-white shadow rounded-lg p-6">
+              <h2 className="text-lg font-medium text-gray-900 mb-4">Lead Notes</h2>
+              <LeadNotes leadId={lead?.id || ''} />
             </div>
           </div>
 
