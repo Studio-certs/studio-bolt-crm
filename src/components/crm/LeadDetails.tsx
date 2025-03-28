@@ -21,6 +21,13 @@ import { TodoList } from './TodoList';
 import { LeadNotes } from './LeadNotes';
 import { useAuth } from '../../context/AuthContext';
 
+interface Customer {
+  id: string;
+  name: string;
+  description: string;
+  address: string;
+}
+
 const LEAD_STATUSES = [
   { value: 'new', label: 'New', color: 'bg-blue-100 text-blue-800' },
   { value: 'contacted', label: 'Contacted', color: 'bg-yellow-100 text-yellow-800' },
@@ -41,12 +48,19 @@ export const LeadDetails: React.FC = () => {
   const [error, setError] = React.useState('');
   const [success, setSuccess] = React.useState('');
   const [isUpdatingStatus, setIsUpdatingStatus] = React.useState(false);
+  const [customers, setCustomers] = React.useState<Customer[]>([]);
 
   React.useEffect(() => {
     if (leadId) {
       fetchLeadDetails();
     }
   }, [leadId]);
+
+  React.useEffect(() => {
+    if (isEditing && lead?.client_id) {
+      fetchCustomers(lead.client_id);
+    }
+  }, [isEditing, lead?.client_id]);
 
   const fetchLeadDetails = async () => {
     try {
@@ -64,6 +78,20 @@ export const LeadDetails: React.FC = () => {
       setError('Error loading lead details');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const fetchCustomers = async (clientId: string) => {
+    try {
+      const { data } = await supabase
+        .from('client_customers')
+        .select('*')
+        .eq('client_id', clientId)
+        .order('name', { ascending: true });
+      
+      if (data) setCustomers(data);
+    } catch (error) {
+      console.error('Error fetching customers:', error);
     }
   };
 
@@ -285,12 +313,18 @@ export const LeadDetails: React.FC = () => {
                     <div className="flex-1">
                       <p className="text-xs text-gray-500">Company</p>
                       {isEditing ? (
-                        <input
-                          type="text"
+                        <select
                           value={editedLead.company}
                           onChange={(e) => setEditedLead({ ...editedLead, company: e.target.value })}
                           className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                        />
+                        >
+                          <option value="">Select a company</option>
+                          {customers.map((customer) => (
+                            <option key={customer.id} value={customer.name}>
+                              {customer.name}
+                            </option>
+                          ))}
+                        </select>
                       ) : (
                         <p className="font-medium">{lead.company || 'Not provided'}</p>
                       )}

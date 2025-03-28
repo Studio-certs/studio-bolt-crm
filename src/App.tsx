@@ -12,6 +12,7 @@ import { UserProfile } from './components/UserProfile';
 import { ClientDetails } from './components/ClientDetails';
 import { ClientCRM } from './components/ClientCRM';
 import { LeadDetails } from './components/crm/LeadDetails';
+import { CustomerDetails } from './components/CustomerDetails';
 
 function App() {
   return (
@@ -55,6 +56,7 @@ const AuthenticatedApp: React.FC = () => {
           } 
         />
         <Route path="/clients/:id" element={<ClientDetails />} />
+        <Route path="/clients/:id/customers" element={<CustomerDetails />} />
         <Route path="/clients/:id/crm" element={<ClientCRM />} />
         <Route path="/clients/:id/crm/leads/:leadId" element={<LeadDetails />} />
         <Route path="/profile" element={<UserProfile />} />

@@ -1,6 +1,6 @@
 import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, UserPlus, X, Search, Users, Calendar } from 'lucide-react';
+import { ArrowLeft, UserPlus, X, Search, Users, Calendar, Building2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { Lead } from '../types/crm';
@@ -21,12 +21,20 @@ interface AvailableUser {
   email: string;
 }
 
+interface Customer {
+  id: string;
+  name: string;
+  description: string;
+  address: string;
+}
+
 export const ClientDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { state: { user } } = useAuth();
   const [client, setClient] = React.useState<any>(null);
   const [clientUsers, setClientUsers] = React.useState<ClientUser[]>([]);
+  const [customers, setCustomers] = React.useState<Customer[]>([]);
   const [showAddUserModal, setShowAddUserModal] = React.useState(false);
   const [selectedUserId, setSelectedUserId] = React.useState('');
   const [availableUsers, setAvailableUsers] = React.useState<AvailableUser[]>([]);
@@ -58,6 +66,12 @@ export const ClientDetails: React.FC = () => {
     }
   }, [showAddUserModal]);
 
+  React.useEffect(() => {
+    if (showAddLeadModal) {
+      fetchCustomers();
+    }
+  }, [showAddLeadModal]);
+
   const checkAccess = async () => {
     try {
       // Check if user is admin or assigned to the client
@@ -77,7 +91,8 @@ export const ClientDetails: React.FC = () => {
       await Promise.all([
         fetchClientDetails(),
         fetchClientUsers(),
-        fetchLeads()
+        fetchLeads(),
+        fetchCustomers()
       ]);
     } catch (error) {
       console.error('Error checking access:', error);
@@ -94,6 +109,16 @@ export const ClientDetails: React.FC = () => {
       .eq('id', id)
       .single();
     if (data) setClient(data);
+  };
+
+  const fetchCustomers = async () => {
+    const { data } = await supabase
+      .from('client_customers')
+      .select('*')
+      .eq('client_id', id)
+      .order('name', { ascending: true });
+    
+    if (data) setCustomers(data);
   };
 
   const fetchClientUsers = async () => {
@@ -281,6 +306,13 @@ export const ClientDetails: React.FC = () => {
             <p className="mt-1 text-sm text-gray-500">{client.email}</p>
           </div>
           <div className="flex space-x-4">
+            <button
+              onClick={() => navigate(`/clients/${id}/customers`)}
+              className="inline-flex items-center justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+            >
+              <Building2 className="h-4 w-4 mr-2" />
+              Manage Customers
+            </button>
             <button
               onClick={() => setShowAddLeadModal(true)}
               className="inline-flex items-center justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
@@ -518,12 +550,18 @@ export const ClientDetails: React.FC = () => {
                   <label className="block text-sm font-medium text-gray-700">
                     Company
                   </label>
-                  <input
-                    type="text"
+                  <select
                     value={newLead.company}
                     onChange={(e) => setNewLead({ ...newLead, company: e.target.value })}
                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                  />
+                  >
+                    <option value="">Select a company</option>
+                    {customers.map((customer) => (
+                      <option key={customer.id} value={customer.name}>
+                        {customer.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>
