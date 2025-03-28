@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { Todo, TodoTemplate } from '../../types/crm';
 import { TodoTemplateModal } from './modals/TodoTemplateModal';
 import { AddCustomTodoModal } from './modals/AddCustomTodoModal';
+import { useAuth } from '../../context/AuthContext';
 
 const TODO_TEMPLATES: TodoTemplate[] = [
   {
@@ -67,22 +68,37 @@ interface TodoListProps {
 }
 
 export const TodoList: React.FC<TodoListProps> = ({ leadId }) => {
+  const { state: { user } } = useAuth();
   const [todos, setTodos] = React.useState<Todo[]>([]);
   const [showTemplateModal, setShowTemplateModal] = React.useState(false);
   const [showCustomTodoModal, setShowCustomTodoModal] = React.useState(false);
+  const [isLoading, setIsLoading] = React.useState(true);
 
   React.useEffect(() => {
     fetchTodos();
   }, [leadId]);
 
   const fetchTodos = async () => {
-    const { data } = await supabase
-      .from('lead_todos')
-      .select('*')
-      .eq('lead_id', leadId)
-      .order('created_at', { ascending: true });
-    
-    if (data) setTodos(data);
+    try {
+      setIsLoading(true);
+      let query = supabase
+        .from('lead_todos')
+        .select('*')
+        .eq('lead_id', leadId)
+        .order('created_at', { ascending: true });
+
+      // If user is not admin, only show todos they created
+      if (user?.role !== 'admin') {
+        query = query.eq('created_by', user?.id);
+      }
+
+      const { data } = await query;
+      if (data) setTodos(data);
+    } catch (error) {
+      console.error('Error fetching todos:', error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleTemplateSelect = async (template: TodoTemplate) => {
@@ -137,6 +153,21 @@ export const TodoList: React.FC<TodoListProps> = ({ leadId }) => {
       fetchTodos();
     }
   };
+
+  if (isLoading) {
+    return (
+      <div className="bg-white shadow rounded-lg p-6">
+        <div className="animate-pulse space-y-4">
+          <div className="h-4 bg-gray-200 rounded w-1/4"></div>
+          <div className="space-y-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-10 bg-gray-200 rounded"></div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white shadow rounded-lg p-6">

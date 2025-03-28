@@ -34,9 +34,9 @@ export const ClientDetails: React.FC = () => {
   const [error, setError] = React.useState('');
   const [isLoading, setIsLoading] = React.useState(true);
   const [accessDenied, setAccessDenied] = React.useState(false);
-  const [customers, setCustomers] = React.useState<Lead[]>([]);
-  const [showAddCustomerModal, setShowAddCustomerModal] = React.useState(false);
-  const [newCustomer, setNewCustomer] = React.useState<Partial<Lead>>({
+  const [leads, setLeads] = React.useState<Lead[]>([]);
+  const [showAddLeadModal, setShowAddLeadModal] = React.useState(false);
+  const [newLead, setNewLead] = React.useState<Partial<Lead>>({
     name: '',
     email: '',
     phone: '',
@@ -60,6 +60,7 @@ export const ClientDetails: React.FC = () => {
 
   const checkAccess = async () => {
     try {
+      // Check if user is admin or assigned to the client
       const { data: accessCheck } = await supabase
         .from('client_users')
         .select('client_id')
@@ -75,8 +76,8 @@ export const ClientDetails: React.FC = () => {
 
       await Promise.all([
         fetchClientDetails(),
-        fetchCustomers(),
-        user?.role === 'admin' ? fetchClientUsers() : Promise.resolve()
+        fetchClientUsers(),
+        fetchLeads()
       ]);
     } catch (error) {
       console.error('Error checking access:', error);
@@ -124,13 +125,25 @@ export const ClientDetails: React.FC = () => {
     }
   };
 
-  const fetchCustomers = async () => {
-    const { data } = await supabase
-      .from('client_leads')
-      .select('*')
-      .eq('client_id', id)
-      .order('created_at', { ascending: false });
-    if (data) setCustomers(data);
+  const fetchLeads = async () => {
+    try {
+      let query = supabase
+        .from('client_leads')
+        .select('*')
+        .eq('client_id', id)
+        .order('created_at', { ascending: false });
+
+      // If user is not admin, only show leads they created
+      if (user?.role !== 'admin') {
+        query = query.eq('created_by', user?.id);
+      }
+
+      const { data } = await query;
+      if (data) setLeads(data);
+    } catch (error) {
+      console.error('Error fetching leads:', error);
+      setError('Error loading leads');
+    }
   };
 
   const handleAddUser = async (e: React.FormEvent) => {
@@ -160,25 +173,25 @@ export const ClientDetails: React.FC = () => {
     fetchClientUsers();
   };
 
-  const handleAddCustomer = async (e: React.FormEvent) => {
+  const handleAddLead = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    if (!newCustomer.name || !newCustomer.email) {
+    if (!newLead.name || !newLead.email) {
       setError('Name and email are required');
       return;
     }
 
     // Check for duplicate email
-    const { data: existingCustomer } = await supabase
+    const { data: existingLead } = await supabase
       .from('client_leads')
       .select('id')
       .eq('client_id', id)
-      .eq('email', newCustomer.email)
+      .eq('email', newLead.email)
       .maybeSingle();
 
-    if (existingCustomer) {
-      setError('A customer with this email already exists');
+    if (existingLead) {
+      setError('A lead with this email already exists');
       return;
     }
 
@@ -186,7 +199,7 @@ export const ClientDetails: React.FC = () => {
       .from('client_leads')
       .insert([{
         client_id: id,
-        ...newCustomer
+        ...newLead
       }]);
 
     if (createError) {
@@ -194,8 +207,8 @@ export const ClientDetails: React.FC = () => {
       return;
     }
 
-    setShowAddCustomerModal(false);
-    setNewCustomer({
+    setShowAddLeadModal(false);
+    setNewLead({
       name: '',
       email: '',
       phone: '',
@@ -204,7 +217,7 @@ export const ClientDetails: React.FC = () => {
       status: 'new',
       notes: ''
     });
-    fetchCustomers();
+    fetchLeads();
   };
 
   const handleRemoveUser = async (userId: string) => {
@@ -269,11 +282,11 @@ export const ClientDetails: React.FC = () => {
           </div>
           <div className="flex space-x-4">
             <button
-              onClick={() => setShowAddCustomerModal(true)}
+              onClick={() => setShowAddLeadModal(true)}
               className="inline-flex items-center justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
             >
               <Users className="h-4 w-4 mr-2" />
-              Add Customer
+              Add Lead
             </button>
             {user?.role === 'admin' && (
               <button
@@ -323,7 +336,7 @@ export const ClientDetails: React.FC = () => {
       <div className="mt-8">
         <div className="bg-white shadow rounded-lg">
           <div className="px-4 py-5 sm:p-6">
-            <h3 className="text-lg font-medium leading-6 text-gray-900">Customers</h3>
+            <h3 className="text-lg font-medium leading-6 text-gray-900">Leads</h3>
             <div className="mt-5">
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
@@ -347,40 +360,40 @@ export const ClientDetails: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {customers.map((customer) => (
+                    {leads.map((lead) => (
                       <tr 
-                        key={customer.id}
+                        key={lead.id}
                         className="hover:bg-gray-50 cursor-pointer"
-                        onClick={() => navigate(`/clients/${id}/crm/leads/${customer.id}`)}
+                        onClick={() => navigate(`/clients/${id}/crm/leads/${lead.id}`)}
                       >
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm font-medium text-gray-900">
-                            {customer.name}
+                            {lead.name}
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">{customer.email}</div>
-                          {customer.phone && (
-                            <div className="text-sm text-gray-500">{customer.phone}</div>
+                          <div className="text-sm text-gray-900">{lead.email}</div>
+                          {lead.phone && (
+                            <div className="text-sm text-gray-500">{lead.phone}</div>
                           )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm text-gray-900">
-                            {customer.company || 'Not specified'}
+                            {lead.company || 'Not specified'}
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 ${
-                            customer.status === 'won' ? 'bg-green-100 text-green-800' :
-                            customer.status === 'lost' ? 'bg-red-100 text-red-800' :
+                            lead.status === 'won' ? 'bg-green-100 text-green-800' :
+                            lead.status === 'lost' ? 'bg-red-100 text-red-800' :
                             'bg-yellow-100 text-yellow-800'
                           }`}>
-                            {customer.status}
+                            {lead.status}
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm text-gray-500">
-                            {customer.source}
+                            {lead.source}
                           </div>
                         </td>
                       </tr>
@@ -441,13 +454,14 @@ export const ClientDetails: React.FC = () => {
         </div>
       )}
 
-      {showAddCustomerModal && (
+      {/* Add Lead Modal */}
+      {showAddLeadModal && (
         <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4">
           <div className="bg-white rounded-lg max-w-md w-full p-6">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-medium text-gray-900">Add New Customer</h3>
+              <h3 className="text-lg font-medium text-gray-900">Add New Lead</h3>
               <button
-                onClick={() => setShowAddCustomerModal(false)}
+                onClick={() => setShowAddLeadModal(false)}
                 className="text-gray-400 hover:text-gray-500"
               >
                 <X className="h-6 w-6" />
@@ -460,7 +474,7 @@ export const ClientDetails: React.FC = () => {
               </div>
             )}
 
-            <form onSubmit={handleAddCustomer}>
+            <form onSubmit={handleAddLead}>
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700">
@@ -469,8 +483,8 @@ export const ClientDetails: React.FC = () => {
                   <input
                     type="text"
                     required
-                    value={newCustomer.name}
-                    onChange={(e) => setNewCustomer({ ...newCustomer, name: e.target.value })}
+                    value={newLead.name}
+                    onChange={(e) => setNewLead({ ...newLead, name: e.target.value })}
                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                   />
                 </div>
@@ -482,8 +496,8 @@ export const ClientDetails: React.FC = () => {
                   <input
                     type="email"
                     required
-                    value={newCustomer.email}
-                    onChange={(e) => setNewCustomer({ ...newCustomer, email: e.target.value })}
+                    value={newLead.email}
+                    onChange={(e) => setNewLead({ ...newLead, email: e.target.value })}
                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                   />
                 </div>
@@ -494,8 +508,8 @@ export const ClientDetails: React.FC = () => {
                   </label>
                   <input
                     type="tel"
-                    value={newCustomer.phone}
-                    onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })}
+                    value={newLead.phone}
+                    onChange={(e) => setNewLead({ ...newLead, phone: e.target.value })}
                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                   />
                 </div>
@@ -506,8 +520,8 @@ export const ClientDetails: React.FC = () => {
                   </label>
                   <input
                     type="text"
-                    value={newCustomer.company}
-                    onChange={(e) => setNewCustomer({ ...newCustomer, company: e.target.value })}
+                    value={newLead.company}
+                    onChange={(e) => setNewLead({ ...newLead, company: e.target.value })}
                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                   />
                 </div>
@@ -517,8 +531,8 @@ export const ClientDetails: React.FC = () => {
                     Source
                   </label>
                   <select
-                    value={newCustomer.source}
-                    onChange={(e) => setNewCustomer({ ...newCustomer, source: e.target.value as Lead['source'] })}
+                    value={newLead.source}
+                    onChange={(e) => setNewLead({ ...newLead, source: e.target.value as Lead['source'] })}
                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                   >
                     <option value="referral">Referral</option>
@@ -533,8 +547,8 @@ export const ClientDetails: React.FC = () => {
                     Notes
                   </label>
                   <textarea
-                    value={newCustomer.notes}
-                    onChange={(e) => setNewCustomer({ ...newCustomer, notes: e.target.value })}
+                    value={newLead.notes}
+                    onChange={(e) => setNewLead({ ...newLead, notes: e.target.value })}
                     rows={3}
                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                   />
@@ -544,7 +558,7 @@ export const ClientDetails: React.FC = () => {
               <div className="mt-6 flex justify-end space-x-3">
                 <button
                   type="button"
-                  onClick={() => setShowAddCustomerModal(false)}
+                  onClick={() => setShowAddLeadModal(false)}
                   className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
                 >
                   Cancel
@@ -553,7 +567,7 @@ export const ClientDetails: React.FC = () => {
                   type="submit"
                   className="rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
                 >
-                  Add Customer
+                  Add Lead
                 </button>
               </div>
             </form>
@@ -561,6 +575,7 @@ export const ClientDetails: React.FC = () => {
         </div>
       )}
 
+      {/* Add User Modal */}
       {showAddUserModal && (
         <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4">
           <div className="bg-white rounded-lg max-w-md w-full p-6">

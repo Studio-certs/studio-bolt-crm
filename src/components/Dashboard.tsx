@@ -1,6 +1,6 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { 
   ArrowRight, 
   Users, 
@@ -171,13 +171,13 @@ export const Dashboard: React.FC = () => {
           {user?.role === 'admin' ? (
             <>
               You have admin access.
-              <a 
-                href="/admin" 
+              <Link 
+                to="/admin" 
                 className="ml-2 text-primary-600 hover:text-primary-900 flex items-center"
               >
                 Go to Admin Dashboard
                 <ArrowRight className="h-4 w-4 ml-1" />
-              </a>
+              </Link>
             </>
           ) : (
             'View and manage your assigned clients.'
