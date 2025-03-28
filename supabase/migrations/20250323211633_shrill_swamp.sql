@@ -45,4 +45,4 @@ CREATE POLICY "Only admins can modify settings"
 
 -- Insert default settings
 INSERT INTO app_settings (key, value) VALUES
-  ('login_image', 'https://i.imgur.com/vxVBPYp.png');
+  ('login_image', 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&q=80&w=2400');

@@ -54,7 +54,7 @@ const AuthenticatedApp: React.FC = () => {
               : <Navigate to="/" />
           } 
         />
-        <Route path="/clients/:id" element={user?.role === 'admin' ? <ClientDetails /> : <Navigate to="/" />} />
+        <Route path="/clients/:id" element={<ClientDetails />} />
         <Route path="/clients/:id/crm" element={<ClientCRM />} />
         <Route path="/clients/:id/crm/leads/:leadId" element={<LeadDetails />} />
         <Route path="/profile" element={<UserProfile />} />
