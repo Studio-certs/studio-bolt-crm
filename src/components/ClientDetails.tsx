@@ -1,8 +1,9 @@
 import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, UserPlus, X, Search } from 'lucide-react';
+import { ArrowLeft, UserPlus, X, Search, Users, Calendar } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
+import { Lead } from '../types/crm';
 
 interface ClientUser {
   id: string;
@@ -33,6 +34,17 @@ export const ClientDetails: React.FC = () => {
   const [error, setError] = React.useState('');
   const [isLoading, setIsLoading] = React.useState(true);
   const [accessDenied, setAccessDenied] = React.useState(false);
+  const [customers, setCustomers] = React.useState<Lead[]>([]);
+  const [showAddCustomerModal, setShowAddCustomerModal] = React.useState(false);
+  const [newCustomer, setNewCustomer] = React.useState<Partial<Lead>>({
+    name: '',
+    email: '',
+    phone: '',
+    company: '',
+    source: 'other',
+    status: 'new',
+    notes: ''
+  });
 
   React.useEffect(() => {
     if (id) {
@@ -48,7 +60,6 @@ export const ClientDetails: React.FC = () => {
 
   const checkAccess = async () => {
     try {
-      // First check if the user has access to this client
       const { data: accessCheck } = await supabase
         .from('client_users')
         .select('client_id')
@@ -56,16 +67,15 @@ export const ClientDetails: React.FC = () => {
         .eq('user_id', user?.id)
         .maybeSingle();
 
-      // If user is not admin and has no access, set accessDenied
       if (!accessCheck && user?.role !== 'admin') {
         setAccessDenied(true);
         setIsLoading(false);
         return;
       }
 
-      // If access is granted or user is admin, fetch data
       await Promise.all([
         fetchClientDetails(),
+        fetchCustomers(),
         user?.role === 'admin' ? fetchClientUsers() : Promise.resolve()
       ]);
     } catch (error) {
@@ -102,18 +112,25 @@ export const ClientDetails: React.FC = () => {
   };
 
   const fetchAvailableUsers = async () => {
-    // Get all users with role 'user'
     const { data: allUsers } = await supabase
       .from('profiles')
       .select('id, name, email, role')
       .eq('role', 'user');
 
     if (allUsers) {
-      // Filter out users who are already assigned to this client
       const assignedUserIds = clientUsers.map(cu => cu.user_id);
       const availableUsers = allUsers.filter(user => !assignedUserIds.includes(user.id));
       setAvailableUsers(availableUsers);
     }
+  };
+
+  const fetchCustomers = async () => {
+    const { data } = await supabase
+      .from('client_leads')
+      .select('*')
+      .eq('client_id', id)
+      .order('created_at', { ascending: false });
+    if (data) setCustomers(data);
   };
 
   const handleAddUser = async (e: React.FormEvent) => {
@@ -141,6 +158,53 @@ export const ClientDetails: React.FC = () => {
     setShowAddUserModal(false);
     setSelectedUserId('');
     fetchClientUsers();
+  };
+
+  const handleAddCustomer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+
+    if (!newCustomer.name || !newCustomer.email) {
+      setError('Name and email are required');
+      return;
+    }
+
+    // Check for duplicate email
+    const { data: existingCustomer } = await supabase
+      .from('client_leads')
+      .select('id')
+      .eq('client_id', id)
+      .eq('email', newCustomer.email)
+      .maybeSingle();
+
+    if (existingCustomer) {
+      setError('A customer with this email already exists');
+      return;
+    }
+
+    const { error: createError } = await supabase
+      .from('client_leads')
+      .insert([{
+        client_id: id,
+        ...newCustomer
+      }]);
+
+    if (createError) {
+      setError(createError.message);
+      return;
+    }
+
+    setShowAddCustomerModal(false);
+    setNewCustomer({
+      name: '',
+      email: '',
+      phone: '',
+      company: '',
+      source: 'other',
+      status: 'new',
+      notes: ''
+    });
+    fetchCustomers();
   };
 
   const handleRemoveUser = async (userId: string) => {
@@ -203,15 +267,24 @@ export const ClientDetails: React.FC = () => {
             <h2 className="text-2xl font-bold text-gray-900">{client.name}</h2>
             <p className="mt-1 text-sm text-gray-500">{client.email}</p>
           </div>
-          {user?.role === 'admin' && (
+          <div className="flex space-x-4">
             <button
-              onClick={() => setShowAddUserModal(true)}
+              onClick={() => setShowAddCustomerModal(true)}
               className="inline-flex items-center justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
             >
-              <UserPlus className="h-4 w-4 mr-2" />
-              Add User
+              <Users className="h-4 w-4 mr-2" />
+              Add Customer
             </button>
-          )}
+            {user?.role === 'admin' && (
+              <button
+                onClick={() => setShowAddUserModal(true)}
+                className="inline-flex items-center justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+              >
+                <UserPlus className="h-4 w-4 mr-2" />
+                Add User
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -243,6 +316,79 @@ export const ClientDetails: React.FC = () => {
                 </dd>
               </div>
             </dl>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-8">
+        <div className="bg-white shadow rounded-lg">
+          <div className="px-4 py-5 sm:p-6">
+            <h3 className="text-lg font-medium leading-6 text-gray-900">Customers</h3>
+            <div className="mt-5">
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Name
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Contact
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Company
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Status
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Source
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {customers.map((customer) => (
+                      <tr 
+                        key={customer.id}
+                        className="hover:bg-gray-50 cursor-pointer"
+                        onClick={() => navigate(`/clients/${id}/crm/leads/${customer.id}`)}
+                      >
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm font-medium text-gray-900">
+                            {customer.name}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm text-gray-900">{customer.email}</div>
+                          {customer.phone && (
+                            <div className="text-sm text-gray-500">{customer.phone}</div>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm text-gray-900">
+                            {customer.company || 'Not specified'}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 ${
+                            customer.status === 'won' ? 'bg-green-100 text-green-800' :
+                            customer.status === 'lost' ? 'bg-red-100 text-red-800' :
+                            'bg-yellow-100 text-yellow-800'
+                          }`}>
+                            {customer.status}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm text-gray-500">
+                            {customer.source}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -291,6 +437,126 @@ export const ClientDetails: React.FC = () => {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showAddCustomerModal && (
+        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg max-w-md w-full p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-medium text-gray-900">Add New Customer</h3>
+              <button
+                onClick={() => setShowAddCustomerModal(false)}
+                className="text-gray-400 hover:text-gray-500"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            {error && (
+              <div className="mb-4 bg-red-50 text-red-700 p-3 rounded">
+                {error}
+              </div>
+            )}
+
+            <form onSubmit={handleAddCustomer}>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Full Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newCustomer.name}
+                    onChange={(e) => setNewCustomer({ ...newCustomer, name: e.target.value })}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Email *
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={newCustomer.email}
+                    onChange={(e) => setNewCustomer({ ...newCustomer, email: e.target.value })}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Phone
+                  </label>
+                  <input
+                    type="tel"
+                    value={newCustomer.phone}
+                    onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Company
+                  </label>
+                  <input
+                    type="text"
+                    value={newCustomer.company}
+                    onChange={(e) => setNewCustomer({ ...newCustomer, company: e.target.value })}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Source
+                  </label>
+                  <select
+                    value={newCustomer.source}
+                    onChange={(e) => setNewCustomer({ ...newCustomer, source: e.target.value as Lead['source'] })}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  >
+                    <option value="referral">Referral</option>
+                    <option value="website">Website</option>
+                    <option value="cold_call">Cold Call</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Notes
+                  </label>
+                  <textarea
+                    value={newCustomer.notes}
+                    onChange={(e) => setNewCustomer({ ...newCustomer, notes: e.target.value })}
+                    rows={3}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-6 flex justify-end space-x-3">
+                <button
+                  type="button"
+                  onClick={() => setShowAddCustomerModal(false)}
+                  className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                >
+                  Add Customer
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

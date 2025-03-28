@@ -58,10 +58,7 @@ export const LoginForm: React.FC = () => {
       <div className="flex-1 flex items-center justify-center px-4 sm:px-6 lg:px-8 bg-white">
         <div className="max-w-md w-full space-y-8">
           <div>
-            <div className="w-12 h-12 rounded-xl bg-primary-600 flex items-center justify-center mx-auto">
-              <LogIn className="h-6 w-6 text-white" />
-            </div>
-            <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+            <h2 className="text-center text-3xl font-extrabold text-gray-900">
               {isRegistering ? 'Create your account' : 'Welcome back'}
             </h2>
             <p className="mt-2 text-center text-sm text-gray-600">
@@ -142,17 +139,7 @@ export const LoginForm: React.FC = () => {
                   </svg>
                 ) : (
                   <>
-                    {isRegistering ? (
-                      <>
-                        <UserPlus className="h-5 w-5 mr-2" />
-                        Create Account
-                      </>
-                    ) : (
-                      <>
-                        <LogIn className="h-5 w-5 mr-2" />
-                        Sign in
-                      </>
-                    )}
+                    {isRegistering ? 'Create Account' : 'Sign in'}
                   </>
                 )}
               </button>
