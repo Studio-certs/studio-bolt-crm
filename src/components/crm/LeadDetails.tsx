@@ -11,7 +11,8 @@ import {
   Edit3,
   X,
   Save,
-  AlertCircle
+  AlertCircle,
+  CheckCircle2
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Lead } from '../../types/crm';
@@ -19,6 +20,15 @@ import { LeadChatter } from './LeadChatter';
 import { TodoList } from './TodoList';
 import { LeadNotes } from './LeadNotes';
 import { useAuth } from '../../context/AuthContext';
+
+const LEAD_STATUSES = [
+  { value: 'new', label: 'New', color: 'bg-blue-100 text-blue-800' },
+  { value: 'contacted', label: 'Contacted', color: 'bg-yellow-100 text-yellow-800' },
+  { value: 'qualified', label: 'Qualified', color: 'bg-indigo-100 text-indigo-800' },
+  { value: 'proposal', label: 'Proposal', color: 'bg-purple-100 text-purple-800' },
+  { value: 'won', label: 'Won', color: 'bg-green-100 text-green-800' },
+  { value: 'lost', label: 'Lost', color: 'bg-red-100 text-red-800' }
+];
 
 export const LeadDetails: React.FC = () => {
   const { leadId } = useParams<{ leadId: string }>();
@@ -30,6 +40,7 @@ export const LeadDetails: React.FC = () => {
   const [editedLead, setEditedLead] = React.useState<Partial<Lead>>({});
   const [error, setError] = React.useState('');
   const [success, setSuccess] = React.useState('');
+  const [isUpdatingStatus, setIsUpdatingStatus] = React.useState(false);
 
   React.useEffect(() => {
     if (leadId) {
@@ -53,6 +64,31 @@ export const LeadDetails: React.FC = () => {
       setError('Error loading lead details');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleStatusChange = async (newStatus: string) => {
+    try {
+      setIsUpdatingStatus(true);
+      setError('');
+      setSuccess('');
+
+      const { error: updateError } = await supabase
+        .from('client_leads')
+        .update({
+          status: newStatus,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', leadId);
+
+      if (updateError) throw updateError;
+
+      setSuccess(`Lead status updated to ${newStatus}`);
+      fetchLeadDetails();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error updating lead status');
+    } finally {
+      setIsUpdatingStatus(false);
     }
   };
 
@@ -96,6 +132,10 @@ export const LeadDetails: React.FC = () => {
     return user.role === 'admin' || lead.created_by === user.id;
   };
 
+  const getStatusColor = (status: string) => {
+    return LEAD_STATUSES.find(s => s.value === status)?.color || 'bg-gray-100 text-gray-800';
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -126,14 +166,27 @@ export const LeadDetails: React.FC = () => {
                 <p className="text-sm text-gray-500">{lead?.company}</p>
               </div>
             </div>
-            <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-              lead?.status === 'won' ? 'bg-green-100 text-green-800' :
-              lead?.status === 'lost' ? 'bg-red-100 text-red-800' :
-              lead?.status === 'proposal' ? 'bg-yellow-100 text-yellow-800' :
-              'bg-gray-100 text-gray-800'
-            }`}>
-              {lead?.status}
-            </span>
+            {canEdit() && (
+              <div className="relative inline-block text-left">
+                <select
+                  value={lead.status}
+                  onChange={(e) => handleStatusChange(e.target.value)}
+                  disabled={isUpdatingStatus}
+                  className={`${getStatusColor(lead.status)} appearance-none cursor-pointer pl-3 pr-8 py-1 rounded-full text-sm font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                  {LEAD_STATUSES.map((status) => (
+                    <option key={status.value} value={status.value}>
+                      {status.label}
+                    </option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
+                  <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                  </svg>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
