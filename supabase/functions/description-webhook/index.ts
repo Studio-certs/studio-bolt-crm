@@ -50,7 +50,7 @@ serve(async (req) => {
       .from('client_customers')
       .select('generated_description_status')
       .eq('id', customerId)
-      .single();
+      .maybeSingle();
 
     if (fetchError) {
       console.error('Error fetching customer:', fetchError);
@@ -97,7 +97,7 @@ serve(async (req) => {
       .from('client_customers')
       .select('generated_description_status, generated_description')
       .eq('id', customerId)
-      .single();
+      .maybeSingle();
 
     if (verifyError) {
       console.error('Error verifying final state:', verifyError);
