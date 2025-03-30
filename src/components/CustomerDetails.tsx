@@ -1,6 +1,19 @@
 import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Building2, Edit3, X, Save, AlertCircle } from 'lucide-react';
+import { 
+  ArrowLeft, 
+  Building2, 
+  Edit3, 
+  X, 
+  Save, 
+  AlertCircle,
+  Wand2,
+  Loader2,
+  RefreshCw,
+  CheckCircle2,
+  XCircle,
+  Star
+} from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 interface Customer {
@@ -12,6 +25,12 @@ interface Customer {
   created_by: string;
   updated_at: string;
   client_id: string;
+  generated_description: {
+    lead_score: number;
+    use_case_summary: string;
+    talking_points: string[];
+  } | null;
+  generated_description_status: 'not_generated' | 'processing' | 'failed' | 'generated';
 }
 
 interface Lead {
@@ -34,6 +53,7 @@ export const CustomerDetails: React.FC = () => {
   const [error, setError] = React.useState('');
   const [success, setSuccess] = React.useState('');
   const [relatedLeads, setRelatedLeads] = React.useState<Lead[]>([]);
+  const [isGenerating, setIsGenerating] = React.useState(false);
 
   React.useEffect(() => {
     if (customerId) {
@@ -98,6 +118,160 @@ export const CustomerDetails: React.FC = () => {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error updating customer');
     }
+  };
+
+  const handleGenerateDescription = async () => {
+    try {
+      setIsGenerating(true);
+      setError('');
+
+      // First update status to processing
+      const { error: updateError } = await supabase
+        .from('client_customers')
+        .update({
+          generated_description_status: 'processing'
+        })
+        .eq('id', customerId);
+
+      if (updateError) throw updateError;
+
+      // Call the edge function to initiate generation
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-description`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ customerId }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to initiate description generation');
+      }
+
+      fetchCustomerDetails();
+    } catch (err) {
+      console.error('Error initiating generation:', err);
+      setError('Failed to start generation process');
+      
+      await supabase
+        .from('client_customers')
+        .update({
+          generated_description_status: 'failed'
+        })
+        .eq('id', customerId);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const GeneratedDescriptionSection = () => {
+    if (!customer) return null;
+
+    const renderStatus = () => {
+      switch (customer.generated_description_status) {
+        case 'not_generated':
+          return (
+            <button
+              onClick={handleGenerateDescription}
+              disabled={isGenerating}
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+            >
+              <Wand2 className="h-4 w-4 mr-2" />
+              Generate Description
+            </button>
+          );
+        case 'processing':
+          return (
+            <div className="flex items-center text-indigo-600">
+              <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+              Generating description...
+            </div>
+          );
+        case 'failed':
+          return (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center text-red-600">
+                <XCircle className="h-5 w-5 mr-2" />
+                Generation failed
+              </div>
+              <button
+                onClick={handleGenerateDescription}
+                disabled={isGenerating}
+                className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-indigo-600 bg-indigo-100 hover:bg-indigo-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Retry
+              </button>
+            </div>
+          );
+        case 'generated':
+          return (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center text-green-600">
+                <CheckCircle2 className="h-5 w-5 mr-2" />
+                Description generated
+              </div>
+              <button
+                onClick={handleGenerateDescription}
+                disabled={isGenerating}
+                className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-indigo-600 bg-indigo-100 hover:bg-indigo-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Regenerate
+              </button>
+            </div>
+          );
+      }
+    };
+
+    const renderDescription = () => {
+      if (!customer.generated_description || customer.generated_description_status !== 'generated') {
+        return null;
+      }
+
+      const description = customer.generated_description;
+
+      return (
+        <div className="mt-6 space-y-6">
+          <div className="flex items-center space-x-2">
+            <Star className="h-5 w-5 text-yellow-400" />
+            <span className="text-lg font-medium">Lead Score: {description.lead_score}</span>
+          </div>
+
+          <div>
+            <h4 className="text-sm font-medium text-gray-900">Use Case Summary</h4>
+            <p className="mt-2 text-sm text-gray-600">{description.use_case_summary}</p>
+          </div>
+
+          <div>
+            <h4 className="text-sm font-medium text-gray-900">Talking Points</h4>
+            <ul className="mt-2 space-y-2">
+              {description.talking_points.map((point, index) => (
+                <li key={index} className="flex items-start">
+                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs mt-0.5">
+                    {index + 1}
+                  </span>
+                  <span className="ml-2 text-sm text-gray-600">{point}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      );
+    };
+
+    return (
+      <div className="bg-white shadow rounded-lg p-6">
+        <div className="flex justify-between items-center">
+          <h2 className="text-lg font-medium text-gray-900">Generated Description</h2>
+          {renderStatus()}
+        </div>
+        {renderDescription()}
+      </div>
+    );
   };
 
   if (isLoading) {
@@ -180,7 +354,7 @@ export const CustomerDetails: React.FC = () => {
 
       <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2">
+          <div className="lg:col-span-2 space-y-8">
             {/* Customer Information */}
             <div className="bg-white shadow rounded-lg p-6">
               <h2 className="text-lg font-medium text-gray-900 mb-6">Customer Information</h2>
@@ -241,6 +415,9 @@ export const CustomerDetails: React.FC = () => {
                 </div>
               </div>
             </div>
+
+            {/* Generated Description Section */}
+            <GeneratedDescriptionSection />
           </div>
 
           <div className="lg:col-span-1">
