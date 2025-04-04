@@ -32,6 +32,15 @@ const s3Client = new S3Client({
 // Initialize Supabase client
 const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
+// Validate environment variables
+if (!BUCKET_NAME || !ENDPOINT || !API_KEY_ID || !SERVICE_INSTANCE_ID) {
+  throw new Error("Missing required IBM COS environment variables");
+}
+
+if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
+  throw new Error("Missing required Supabase environment variables");
+}
+
 Deno.serve(async (req) => {
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
@@ -64,10 +73,33 @@ Deno.serve(async (req) => {
       throw new Error("Missing required fields: file and leadId");
     }
 
+    // Validate leadId format (UUID)
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(leadId)) {
+      throw new Error("Invalid lead ID format");
+    }
+
     // Validate file size (50MB limit)
     const MAX_FILE_SIZE = 50 * 1024 * 1024;
     if (file.size > MAX_FILE_SIZE) {
       throw new Error("File size exceeds 50MB limit");
+    }
+
+    // Validate file name
+    const validFileName = /^[a-zA-Z0-9._-]+$/;
+    if (!validFileName.test(file.name)) {
+      throw new Error("File name can only contain letters, numbers, dots, underscores, and hyphens");
+    }
+
+    // Check if lead exists and user has access
+    const { data: leadData, error: leadError } = await supabaseAdmin
+      .from("leads")
+      .select("id")
+      .eq("id", leadId)
+      .single();
+
+    if (leadError || !leadData) {
+      throw new Error("Lead not found or access denied");
     }
 
     // Generate safe filename and path
@@ -81,7 +113,6 @@ Deno.serve(async (req) => {
 
     console.log(`Starting upload to IBM COS: ${filePath}`);
 
-    // Upload to IBM COS
     try {
       const uploadCommand = new PutObjectCommand({
         Bucket: BUCKET_NAME,
@@ -133,7 +164,7 @@ Deno.serve(async (req) => {
 
     } catch (uploadError) {
       console.error("IBM COS upload error:", uploadError);
-      throw new Error("Failed to upload file to IBM Cloud Storage");
+      throw new Error(`Failed to upload file to IBM Cloud Storage: ${uploadError.message}`);
     }
 
   } catch (error) {

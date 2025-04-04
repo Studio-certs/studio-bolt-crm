@@ -73,6 +73,16 @@ export const LeadFiles: React.FC<LeadFilesProps> = ({ leadId }) => {
       return;
     }
 
+    // Validate file name
+    const validFileName = /^[a-zA-Z0-9._-]+$/;
+    if (!validFileName.test(file.name)) {
+      setError('File name can only contain letters, numbers, dots, underscores, and hyphens');
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      return;
+    }
+
     await uploadFile(file);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -84,6 +94,12 @@ export const LeadFiles: React.FC<LeadFilesProps> = ({ leadId }) => {
     setError(null);
 
     try {
+      // Validate leadId is a valid UUID
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(leadId)) {
+        throw new Error('Invalid lead ID format');
+      }
+
       const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
       if (sessionError || !sessionData.session) {
         throw new Error('Authentication required. Please log in again.');
@@ -93,7 +109,7 @@ export const LeadFiles: React.FC<LeadFilesProps> = ({ leadId }) => {
       formData.append('file', file);
       formData.append('leadId', leadId);
 
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/upload-lead-file`, {
+      const response = await fetch('/functions/v1/upload-lead-file', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${sessionData.session.access_token}`,
@@ -101,14 +117,14 @@ export const LeadFiles: React.FC<LeadFilesProps> = ({ leadId }) => {
         body: formData,
       });
 
+      const responseData = await response.json();
+
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to upload file');
+        throw new Error(responseData.error || 'Failed to upload file');
       }
 
-      const data = await response.json();
-      if (data.error) {
-        throw new Error(data.error);
+      if (responseData.error) {
+        throw new Error(responseData.error);
       }
 
       await fetchFiles();
