@@ -1,4 +1,3 @@
-// @deno-types="npm:@types/aws-sdk@2.7.0"
 import { createClient } from "npm:@supabase/supabase-js@2.39.7";
 import { S3Client, PutObjectCommand } from "npm:@aws-sdk/client-s3@3.583.0";
 
@@ -9,7 +8,7 @@ const corsHeaders = {
   'Content-Type': 'application/json',
 };
 
-// IBM COS S3 Credentials from environment variables
+// IBM COS S3 Credentials
 const BUCKET_NAME = Deno.env.get("IBM_COS_BUCKET_NAME")!;
 const ENDPOINT = Deno.env.get("IBM_COS_ENDPOINT")!;
 const API_KEY_ID = Deno.env.get("IBM_COS_API_KEY_ID")!;
@@ -22,7 +21,7 @@ const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 // Initialize S3 Client for IBM COS
 const s3Client = new S3Client({
   endpoint: `https://${ENDPOINT}`,
-  region: "auto",
+  region: "au-syd", // Specific region for Sydney endpoint
   credentials: {
     accessKeyId: API_KEY_ID,
     secretAccessKey: SERVICE_INSTANCE_ID,
@@ -30,106 +29,75 @@ const s3Client = new S3Client({
   forcePathStyle: true,
 });
 
-// Initialize Supabase client with Service Role Key
+// Initialize Supabase client
 const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
 Deno.serve(async (req) => {
-  // Handle CORS preflight requests
+  // Handle CORS preflight
   if (req.method === "OPTIONS") {
-    return new Response(null, { 
+    return new Response(null, {
       status: 204,
-      headers: corsHeaders
+      headers: corsHeaders,
     });
   }
 
-  // Validate environment variables
-  const missingVars = [
-    ["BUCKET_NAME", BUCKET_NAME],
-    ["ENDPOINT", ENDPOINT],
-    ["API_KEY_ID", API_KEY_ID],
-    ["SERVICE_INSTANCE_ID", SERVICE_INSTANCE_ID],
-    ["SUPABASE_URL", SUPABASE_URL],
-    ["SERVICE_ROLE_KEY", SERVICE_ROLE_KEY],
-  ].filter(([name, value]) => !value);
-
-  if (missingVars.length > 0) {
-    const missing = missingVars.map(([name]) => name).join(", ");
-    console.error(`Missing environment variables: ${missing}`);
-    return new Response(
-      JSON.stringify({ 
-        error: "Server configuration error", 
-        details: `Missing required environment variables: ${missing}` 
-      }),
-      {
-        status: 500,
-        headers: corsHeaders,
-      }
-    );
-  }
-
   try {
-    // Validate Authorization header
+    // Verify auth token
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       throw new Error("Missing Authorization header");
     }
-    const jwt = authHeader.replace("Bearer ", "");
+    const token = authHeader.replace("Bearer ", "");
 
-    // Validate user
-    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(jwt);
+    // Get user from token
+    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
     if (userError || !user) {
-      console.error("User authentication error:", userError);
-      throw new Error(userError?.message || "Invalid user token");
+      throw new Error("Invalid authentication token");
     }
 
-    // Parse and validate form data
+    // Get form data
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
     const leadId = formData.get("leadId") as string | null;
 
-    if (!file) {
-      throw new Error("File not provided");
-    }
-    if (!leadId) {
-      throw new Error("Lead ID not provided");
+    if (!file || !leadId) {
+      throw new Error("Missing required fields: file and leadId");
     }
 
     // Validate file size (50MB limit)
-    const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB in bytes
+    const MAX_FILE_SIZE = 50 * 1024 * 1024;
     if (file.size > MAX_FILE_SIZE) {
       throw new Error("File size exceeds 50MB limit");
     }
 
-    // Get file buffer
-    const arrayBuffer = await file.arrayBuffer();
-    const fileBuffer = new Uint8Array(arrayBuffer);
-
-    // Construct file path
+    // Generate safe filename and path
     const timestamp = Date.now();
-    const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
-    const filePath = `leads/${leadId}/${timestamp}-${sanitizedFileName}`;
+    const safeFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
+    const filePath = `leads/${leadId}/${timestamp}-${safeFileName}`;
 
-    console.log(`Starting upload for ${file.name} to ${BUCKET_NAME}/${filePath}`);
+    // Convert file to buffer
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = new Uint8Array(arrayBuffer);
+
+    console.log(`Starting upload to IBM COS: ${filePath}`);
 
     // Upload to IBM COS
     try {
-      const uploadParams = {
+      const uploadCommand = new PutObjectCommand({
         Bucket: BUCKET_NAME,
         Key: filePath,
-        Body: fileBuffer,
+        Body: buffer,
         ContentType: file.type,
-      };
+        ACL: "public-read", // Make file publicly accessible
+      });
 
-      const command = new PutObjectCommand(uploadParams);
-      await s3Client.send(command);
-      console.log(`Successfully uploaded ${file.name} to IBM COS`);
-    } catch (cosError) {
-      console.error("IBM COS upload error:", cosError);
-      throw new Error("Failed to upload file to storage");
-    }
+      await s3Client.send(uploadCommand);
+      console.log("File uploaded to IBM COS successfully");
 
-    // Save to database
-    try {
+      // Generate public URL
+      const publicUrl = `https://${BUCKET_NAME}.${ENDPOINT}/${filePath}`;
+
+      // Save file metadata to Supabase
       const { error: dbError } = await supabaseAdmin
         .from("lead_files")
         .insert({
@@ -142,38 +110,41 @@ Deno.serve(async (req) => {
         });
 
       if (dbError) {
-        console.error("Database insert error:", dbError);
-        throw new Error("Failed to record file upload in database");
+        throw new Error(`Database error: ${dbError.message}`);
       }
-    } catch (dbError) {
-      console.error("Database operation error:", dbError);
-      throw new Error("Failed to save file metadata");
+
+      // Return success response
+      return new Response(
+        JSON.stringify({
+          success: true,
+          filePath,
+          publicUrl,
+          fileName: file.name,
+          fileSize: file.size,
+          mimeType: file.type,
+        }),
+        {
+          headers: { ...corsHeaders },
+          status: 200,
+        }
+      );
+
+    } catch (uploadError) {
+      console.error("IBM COS upload error:", uploadError);
+      throw new Error("Failed to upload file to IBM Cloud Storage");
     }
 
-    return new Response(
-      JSON.stringify({ 
-        success: true, 
-        filePath,
-        fileName: file.name,
-        fileSize: file.size,
-        mimeType: file.type
-      }),
-      {
-        headers: corsHeaders,
-        status: 200,
-      }
-    );
-
   } catch (error) {
-    console.error("Upload process error:", error);
+    console.error("Error processing request:", error);
+    
     return new Response(
-      JSON.stringify({ 
-        error: error.message,
-        timestamp: new Date().toISOString()
+      JSON.stringify({
+        error: error.message || "An unexpected error occurred",
+        timestamp: new Date().toISOString(),
       }),
       {
-        status: error.message.includes("configuration") ? 500 : 400,
-        headers: corsHeaders,
+        headers: { ...corsHeaders },
+        status: error.message?.includes("Authorization") ? 401 : 400,
       }
     );
   }

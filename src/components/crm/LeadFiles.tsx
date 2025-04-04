@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Upload, FileText, Trash2, AlertCircle, Loader2 } from 'lucide-react';
+import { Upload, FileText, Trash2, AlertCircle, Loader2, ExternalLink } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 interface LeadFile {
@@ -142,6 +142,12 @@ export const LeadFiles: React.FC<LeadFilesProps> = ({ leadId }) => {
     }
   };
 
+  const getFileUrl = (filePath: string) => {
+    const BUCKET_NAME = 'document-manager';
+    const ENDPOINT = 's3.au-syd.cloud-object-storage.appdomain.cloud';
+    return `https://${BUCKET_NAME}.${ENDPOINT}/${filePath}`;
+  };
+
   const formatBytes = (bytes: number, decimals = 2) => {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
@@ -216,7 +222,17 @@ export const LeadFiles: React.FC<LeadFilesProps> = ({ leadId }) => {
               <div className="flex items-center min-w-0">
                 <FileText className="h-6 w-6 text-gray-400 flex-shrink-0 mr-3" />
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-gray-900 truncate">{file.file_name}</p>
+                  <div className="flex items-center">
+                    <a 
+                      href={getFileUrl(file.file_path)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm font-medium text-gray-900 hover:text-indigo-600 truncate flex items-center"
+                    >
+                      {file.file_name}
+                      <ExternalLink className="h-4 w-4 ml-1" />
+                    </a>
+                  </div>
                   <p className="text-sm text-gray-500">
                     {formatBytes(file.file_size)} - Uploaded by {file.profiles?.name || 'Unknown'} on{' '}
                     {new Date(file.uploaded_at).toLocaleDateString()}
