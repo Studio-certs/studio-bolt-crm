@@ -1,187 +1,107 @@
-import { createClient } from "npm:@supabase/supabase-js@2.39.7";
-import { S3Client, PutObjectCommand } from "npm:@aws-sdk/client-s3@3.583.0";
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { createClient } from 'npm:@supabase/supabase-js@2.39.7';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Max-Age': '86400',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
 
-// IBM COS S3 Credentials
-const BUCKET_NAME = Deno.env.get("IBM_COS_BUCKET_NAME")!;
-const ENDPOINT = Deno.env.get("IBM_COS_ENDPOINT")!;
-const API_KEY_ID = Deno.env.get("IBM_COS_API_KEY_ID")!;
-const SERVICE_INSTANCE_ID = Deno.env.get("IBM_COS_SERVICE_INSTANCE_ID")!;
-
 // Supabase details
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
+const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
-// Initialize S3 Client for IBM COS
-const s3Client = new S3Client({
-  endpoint: `https://${ENDPOINT}`,
-  region: "au-syd",
-  credentials: {
-    accessKeyId: API_KEY_ID,
-    secretAccessKey: SERVICE_INSTANCE_ID,
-  },
-  forcePathStyle: true,
-});
-
-// Initialize Supabase client
+// Initialize Supabase client with Service Role Key
 const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
-// Validate environment variables
-if (!BUCKET_NAME || !ENDPOINT || !API_KEY_ID || !SERVICE_INSTANCE_ID) {
-  throw new Error("Missing required IBM COS environment variables");
-}
-
-if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
-  throw new Error("Missing required Supabase environment variables");
-}
-
-Deno.serve(async (req) => {
-  // Handle CORS preflight
-  if (req.method === "OPTIONS") {
-    return new Response(null, {
-      status: 204,
-      headers: corsHeaders,
-    });
+serve(async (req) => {
+  // Handle CORS preflight requests
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: corsHeaders });
   }
 
   try {
-    // Verify auth token
-    const authHeader = req.headers.get("Authorization");
+    // Get JWT from Authorization header
+    const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
-      throw new Error("Missing Authorization header");
+      throw new Error('Missing Authorization header');
     }
-    const token = authHeader.replace("Bearer ", "");
+    const jwt = authHeader.replace('Bearer ', '');
 
-    // Get user from token
-    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
+    // Get user from JWT
+    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(jwt);
     if (userError || !user) {
-      throw new Error("Invalid authentication token");
+      console.error('User fetch error:', userError);
+      throw new Error('Invalid user token');
     }
 
-    // Get form data
+    // Parse multipart form data
     const formData = await req.formData();
-    const file = formData.get("file") as File | null;
-    const leadId = formData.get("leadId") as string | null;
+    const file = formData.get('file') as File | null;
+    const leadId = formData.get('leadId') as string | null;
 
-    if (!file || !leadId) {
-      throw new Error("Missing required fields: file and leadId");
+    if (!file) {
+      throw new Error('File not provided');
+    }
+    if (!leadId) {
+      throw new Error('Lead ID not provided');
     }
 
-    // Validate leadId format (UUID)
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(leadId)) {
-      throw new Error("Invalid lead ID format");
+    // Create new FormData for external API
+    const apiFormData = new FormData();
+    apiFormData.append('documentFile', file);
+
+    // Call external API
+    const apiResponse = await fetch('https://studio-certs-be-dev.fly.dev/api/upload/uploadDocument', {
+      method: 'POST',
+      body: apiFormData,
+    });
+
+    if (!apiResponse.ok) {
+      throw new Error(`External API error: ${apiResponse.status} ${apiResponse.statusText}`);
     }
 
-    // Validate file size (50MB limit)
-    const MAX_FILE_SIZE = 50 * 1024 * 1024;
-    if (file.size > MAX_FILE_SIZE) {
-      throw new Error("File size exceeds 50MB limit");
+    const apiData = await apiResponse.json();
+
+    if (apiData.statusCode !== 200 || !apiData.data?.documentFileUrl?.original) {
+      throw new Error('Invalid response from external API');
     }
 
-    // Validate file name
-    const validFileName = /^[a-zA-Z0-9._-]+$/;
-    if (!validFileName.test(file.name)) {
-      throw new Error("File name can only contain letters, numbers, dots, underscores, and hyphens");
-    }
+    const fileUrl = apiData.data.documentFileUrl.original;
 
-    // Check if lead exists and user has access
-    const { data: leadData, error: leadError } = await supabaseAdmin
-      .from("leads")
-      .select("id")
-      .eq("id", leadId)
-      .single();
-
-    if (leadError || !leadData) {
-      throw new Error("Lead not found or access denied");
-    }
-
-    // Generate safe filename and path
-    const timestamp = Date.now();
-    const safeFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
-    const filePath = `leads/${leadId}/${timestamp}-${safeFileName}`;
-
-    // Convert file to buffer
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = new Uint8Array(arrayBuffer);
-
-    console.log(`Starting upload to IBM COS: ${filePath}`);
-
-    try {
-      const uploadCommand = new PutObjectCommand({
-        Bucket: BUCKET_NAME,
-        Key: filePath,
-        Body: buffer,
-        ContentType: file.type,
-        ACL: "public-read",
+    // Insert file metadata into Supabase table using service role
+    const { error: dbError } = await supabaseAdmin
+      .from('lead_files')
+      .insert({
+        lead_id: leadId,
+        file_name: file.name,
+        file_path: fileUrl, // Store the external URL instead of local path
+        file_size: file.size,
+        mime_type: file.type,
+        uploaded_by: user.id,
       });
 
-      await s3Client.send(uploadCommand);
-      console.log("File uploaded to IBM COS successfully");
-
-      // Generate public URL
-      const publicUrl = `https://${BUCKET_NAME}.${ENDPOINT}/${filePath}`;
-
-      // Save file metadata to Supabase
-      const { error: dbError } = await supabaseAdmin
-        .from("lead_files")
-        .insert({
-          lead_id: leadId,
-          file_name: file.name,
-          file_path: filePath,
-          file_size: file.size,
-          mime_type: file.type,
-          uploaded_by: user.id,
-        });
-
-      if (dbError) {
-        throw new Error(`Database error: ${dbError.message}`);
-      }
-
-      return new Response(
-        JSON.stringify({
-          success: true,
-          filePath,
-          publicUrl,
-          fileName: file.name,
-          fileSize: file.size,
-          mimeType: file.type,
-        }),
-        {
-          headers: {
-            ...corsHeaders,
-            'Content-Type': 'application/json',
-          },
-          status: 200,
-        }
-      );
-
-    } catch (uploadError) {
-      console.error("IBM COS upload error:", uploadError);
-      throw new Error(`Failed to upload file to IBM Cloud Storage: ${uploadError.message}`);
+    if (dbError) {
+      console.error('Database insert error:', dbError);
+      throw new Error('Failed to record file upload');
     }
 
+    console.log(`File metadata saved for ${file.name}`);
+
+    return new Response(JSON.stringify({ 
+      success: true, 
+      fileUrl,
+      fileName: file.name
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 200,
+    });
+
   } catch (error) {
-    console.error("Error processing request:", error);
-    
-    return new Response(
-      JSON.stringify({
-        error: error.message || "An unexpected error occurred",
-        timestamp: new Date().toISOString(),
-      }),
-      {
-        headers: {
-          ...corsHeaders,
-          'Content-Type': 'application/json',
-        },
-        status: error.message?.includes("Authorization") ? 401 : 400,
-      }
-    );
+    console.error('Upload error:', error);
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 400,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
 });
