@@ -1,12 +1,12 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { S3Client, PutObjectCommand } from "npm:@aws-sdk/client-s3@3.583.0";
+// @deno-types="npm:@types/aws-sdk@2.7.0"
 import { createClient } from "npm:@supabase/supabase-js@2.39.7";
+import { S3Client, PutObjectCommand } from "npm:@aws-sdk/client-s3@3.583.0";
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-  "Access-Control-Max-Age": "86400",
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Content-Type': 'application/json',
 };
 
 // IBM COS S3 Credentials from environment variables
@@ -33,12 +33,12 @@ const s3Client = new S3Client({
 // Initialize Supabase client with Service Role Key
 const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === "OPTIONS") {
     return new Response(null, { 
-      status: 204, 
-      headers: corsHeaders 
+      status: 204,
+      headers: corsHeaders
     });
   }
 
@@ -62,7 +62,7 @@ serve(async (req) => {
       }),
       {
         status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: corsHeaders,
       }
     );
   }
@@ -100,6 +100,10 @@ serve(async (req) => {
       throw new Error("File size exceeds 50MB limit");
     }
 
+    // Get file buffer
+    const arrayBuffer = await file.arrayBuffer();
+    const fileBuffer = new Uint8Array(arrayBuffer);
+
     // Construct file path
     const timestamp = Date.now();
     const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
@@ -112,7 +116,7 @@ serve(async (req) => {
       const uploadParams = {
         Bucket: BUCKET_NAME,
         Key: filePath,
-        Body: file,
+        Body: fileBuffer,
         ContentType: file.type,
       };
 
@@ -143,7 +147,6 @@ serve(async (req) => {
       }
     } catch (dbError) {
       console.error("Database operation error:", dbError);
-      // Consider implementing cleanup of uploaded file in COS
       throw new Error("Failed to save file metadata");
     }
 
@@ -156,7 +159,7 @@ serve(async (req) => {
         mimeType: file.type
       }),
       {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: corsHeaders,
         status: 200,
       }
     );
@@ -170,7 +173,7 @@ serve(async (req) => {
       }),
       {
         status: error.message.includes("configuration") ? 500 : 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: corsHeaders,
       }
     );
   }

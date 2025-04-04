@@ -103,7 +103,7 @@ export const LeadFiles: React.FC<LeadFilesProps> = ({ leadId }) => {
 
       if (functionError) {
         console.error('Function invocation error:', functionError);
-        throw new Error(functionError.message || 'Failed to upload file. Please try again.');
+        throw new Error('Failed to upload file. Please try again.');
       }
 
       if (data?.error) {
