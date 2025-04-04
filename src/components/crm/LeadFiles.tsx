@@ -93,20 +93,21 @@ export const LeadFiles: React.FC<LeadFilesProps> = ({ leadId }) => {
       formData.append('file', file);
       formData.append('leadId', leadId);
 
-      const { data, error: functionError } = await supabase.functions.invoke('upload-lead-file', {
-        body: formData,
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/upload-lead-file`, {
+        method: 'POST',
         headers: {
-          Authorization: `Bearer ${sessionData.session.access_token}`,
+          'Authorization': `Bearer ${sessionData.session.access_token}`,
         },
-        responseType: 'json',
+        body: formData,
       });
 
-      if (functionError) {
-        console.error('Function invocation error:', functionError);
-        throw new Error('Failed to upload file. Please try again.');
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to upload file');
       }
 
-      if (data?.error) {
+      const data = await response.json();
+      if (data.error) {
         throw new Error(data.error);
       }
 

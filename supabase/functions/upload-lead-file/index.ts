@@ -3,9 +3,9 @@ import { S3Client, PutObjectCommand } from "npm:@aws-sdk/client-s3@3.583.0";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Content-Type': 'application/json',
+  'Access-Control-Max-Age': '86400',
 };
 
 // IBM COS S3 Credentials
@@ -21,7 +21,7 @@ const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 // Initialize S3 Client for IBM COS
 const s3Client = new S3Client({
   endpoint: `https://${ENDPOINT}`,
-  region: "au-syd", // Specific region for Sydney endpoint
+  region: "au-syd",
   credentials: {
     accessKeyId: API_KEY_ID,
     secretAccessKey: SERVICE_INSTANCE_ID,
@@ -88,7 +88,7 @@ Deno.serve(async (req) => {
         Key: filePath,
         Body: buffer,
         ContentType: file.type,
-        ACL: "public-read", // Make file publicly accessible
+        ACL: "public-read",
       });
 
       await s3Client.send(uploadCommand);
@@ -113,7 +113,6 @@ Deno.serve(async (req) => {
         throw new Error(`Database error: ${dbError.message}`);
       }
 
-      // Return success response
       return new Response(
         JSON.stringify({
           success: true,
@@ -124,7 +123,10 @@ Deno.serve(async (req) => {
           mimeType: file.type,
         }),
         {
-          headers: { ...corsHeaders },
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json',
+          },
           status: 200,
         }
       );
@@ -143,7 +145,10 @@ Deno.serve(async (req) => {
         timestamp: new Date().toISOString(),
       }),
       {
-        headers: { ...corsHeaders },
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json',
+        },
         status: error.message?.includes("Authorization") ? 401 : 400,
       }
     );
