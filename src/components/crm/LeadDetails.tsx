@@ -19,7 +19,8 @@ import React from 'react';
       import { LeadChatter } from './LeadChatter';
       import { TodoList } from './TodoList';
       import { LeadNotes } from './LeadNotes';
-      import { LeadFiles } from './LeadFiles'; // Import the new component
+      import { LeadFiles } from './LeadFiles';
+      import { EmailForm } from './EmailForm'; // Import the new EmailForm component
       import { useAuth } from '../../context/AuthContext';
 
       interface Customer {
@@ -387,6 +388,9 @@ import React from 'react';
                       </div>
                     )}
                   </div>
+
+                  {/* Email Form Section */}
+                  <EmailForm leadName={lead.name} leadEmail={lead.email} />
 
                   {/* Lead Notes Section */}
                   <div className="bg-white shadow rounded-lg p-6">
