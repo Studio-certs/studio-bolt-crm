@@ -331,7 +331,11 @@ import React from 'react';
 
               <div className="divide-y divide-gray-100">
                 {users.slice(0, 5).map((user) => (
-                  <div key={user.id} className="p-4">
+                  <div
+                    key={user.id}
+                    onClick={() => navigate(`/admin/users/${user.id}`)} // Make user item clickable
+                    className="p-4 hover:bg-gray-50 cursor-pointer transition-colors group" // Add group for hover effect
+                  >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-3">
                         <div className="flex-shrink-0">
@@ -342,15 +346,18 @@ import React from 'react';
                           </div>
                         </div>
                         <div>
-                          <p className="text-sm font-medium text-gray-900">{user.name || 'No name'}</p>
+                          <p className="text-sm font-medium text-gray-900 group-hover:text-indigo-600 transition-colors">{user.name || 'No name'}</p> {/* Add hover effect */}
                           <p className="text-sm text-gray-500">{user.email}</p>
                         </div>
                       </div>
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        user.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
-                      }`}>
-                        {user.role}
-                      </span>
+                      <div className="flex items-center space-x-2">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          user.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
+                        }`}>
+                          {user.role}
+                        </span>
+                        <ChevronRight className="h-5 w-5 text-gray-400 group-hover:text-gray-600 transition-colors" /> {/* Add chevron */}
+                      </div>
                     </div>
                   </div>
                 ))}

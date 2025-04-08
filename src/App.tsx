@@ -14,7 +14,8 @@ import React from 'react';
     import { LeadDetails } from './components/crm/LeadDetails';
     import { CustomerDetails } from './components/CustomerDetails';
     import { CustomersPage } from './components/CustomersPage';
-    import { TodoItemDetail } from './components/crm/TodoItemDetail'; // Import the new component
+    import { TodoItemDetail } from './components/crm/TodoItemDetail';
+    import { AdminViewUserProfile } from './components/AdminViewUserProfile'; // Import the new component
 
     function App() {
       return (
@@ -44,25 +45,24 @@ import React from 'react';
         return <LoginForm />;
       }
 
+      const isAdmin = user?.role === 'admin';
+      const isSuperAdmin = isAdmin && user?.super_role === 'superadmin';
+
       return (
         <Layout>
           <Routes>
-            <Route path="/admin" element={user?.role === 'admin' ? <AdminDashboard /> : <Navigate to="/" />} />
-            <Route path="/admin/settings" element={user?.role === 'admin' ? <AdminSettings /> : <Navigate to="/" />} />
-            <Route
-              path="/admin/users"
-              element={
-                user?.role === 'admin' && user?.super_role === 'superadmin'
-                  ? <UserManagement />
-                  : <Navigate to="/" />
-              }
-            />
+            {/* Admin Routes */}
+            <Route path="/admin" element={isAdmin ? <AdminDashboard /> : <Navigate to="/" />} />
+            <Route path="/admin/settings" element={isAdmin ? <AdminSettings /> : <Navigate to="/" />} />
+            <Route path="/admin/users" element={isSuperAdmin ? <UserManagement /> : <Navigate to="/" />} />
+            <Route path="/admin/users/:userId" element={isAdmin ? <AdminViewUserProfile /> : <Navigate to="/" />} /> {/* New Admin Route */}
+
+            {/* General Routes */}
             <Route path="/clients/:id" element={<ClientDetails />} />
             <Route path="/clients/:id/customers" element={<CustomersPage />} />
             <Route path="/clients/:id/customers/:customerId" element={<CustomerDetails />} />
             <Route path="/clients/:id/crm" element={<ClientCRM />} />
             <Route path="/clients/:id/crm/leads/:leadId" element={<LeadDetails />} />
-            {/* Add the new route for TodoItemDetail */}
             <Route path="/clients/:id/crm/leads/:leadId/todos/:todoId" element={<TodoItemDetail />} />
             <Route path="/profile" element={<UserProfile />} />
             <Route path="/" element={<Dashboard />} />
