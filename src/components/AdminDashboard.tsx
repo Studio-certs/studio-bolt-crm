@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
     import { useNavigate } from 'react-router-dom';
     import {
       Users,
@@ -14,9 +14,12 @@ import React from 'react';
       Star,
       CheckCircle2,
       AlertCircle,
-      Calendar
+      Calendar,
+      FileText
     } from 'lucide-react';
     import { supabase } from '../lib/supabase';
+    import { AddTemplateModal } from './modals/AddTemplateModal';
+    import { useAuth } from '../context/AuthContext'; // Import useAuth
 
     interface Client {
       id: string;
@@ -27,25 +30,40 @@ import React from 'react';
       status: 'active' | 'inactive';
     }
 
+    interface Template {
+      id: string;
+      name: string;
+      type: string;
+      prompt: string;
+      created_by: string | null;
+      created_at: string;
+      updated_at: string;
+    }
+
     export const AdminDashboard: React.FC = () => {
-      const [users, setUsers] = React.useState<any[]>([]);
-      const [clients, setClients] = React.useState<Client[]>([]);
-      const [totalLeads, setTotalLeads] = React.useState(0);
-      const [totalLeadValue, setTotalLeadValue] = React.useState(0);
-      const [recentActivity, setRecentActivity] = React.useState(0);
-      const [isLoading, setIsLoading] = React.useState(true);
+      const { state: authState } = useAuth(); // Get auth state
+      const { user } = authState; // Destructure user from auth state
+      const [users, setUsers] = useState<any[]>([]);
+      const [clients, setClients] = useState<Client[]>([]);
+      const [templates, setTemplates] = useState<Template[]>([]);
+      const [totalLeads, setTotalLeads] = useState(0);
+      const [totalLeadValue, setTotalLeadValue] = useState(0);
+      const [recentActivity, setRecentActivity] = useState(0);
+      const [isLoading, setIsLoading] = useState(true);
       const navigate = useNavigate();
-      const [showClientModal, setShowClientModal] = React.useState(false);
-      const [newClient, setNewClient] = React.useState<Partial<Client>>({
+      const [showClientModal, setShowClientModal] = useState(false);
+      const [showAddTemplateModal, setShowAddTemplateModal] = useState(false); // State for template modal
+      const [newClient, setNewClient] = useState<Partial<Client>>({
         name: '',
         email: '',
         phone: '',
         company: '',
         status: 'active'
       });
-      const [error, setError] = React.useState('');
+      const [error, setError] = useState('');
+      const [success, setSuccess] = useState(''); // Added success state
 
-      React.useEffect(() => {
+      useEffect(() => {
         fetchDashboardData();
       }, []);
 
@@ -55,7 +73,8 @@ import React from 'react';
           await Promise.all([
             fetchUsers(),
             fetchClients(),
-            fetchLeadStats()
+            fetchLeadStats(),
+            fetchTemplates()
           ]);
         } finally {
           setIsLoading(false);
@@ -71,8 +90,6 @@ import React from 'react';
           setTotalLeads(leadsData.length);
           const totalValue = leadsData.reduce((sum, lead) => sum + (lead.value || 0), 0);
           setTotalLeadValue(totalValue);
-
-          // Calculate recent activity (last 30 days)
           const thirtyDaysAgo = new Date();
           thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
           const recentLeads = leadsData.filter(lead =>
@@ -98,9 +115,24 @@ import React from 'react';
         if (data) setClients(data);
       };
 
+      const fetchTemplates = async () => {
+        const { data, error: templateError } = await supabase
+          .from('templates')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (templateError) {
+          console.error('Error fetching templates:', templateError);
+          setError('Failed to load templates.');
+        } else if (data) {
+          setTemplates(data);
+        }
+      };
+
       const handleCreateClient = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
+        setSuccess('');
 
         if (!newClient.name || !newClient.email) {
           setError('Name and email are required');
@@ -116,6 +148,7 @@ import React from 'react';
           return;
         }
 
+        setSuccess('Client added successfully!');
         setShowClientModal(false);
         setNewClient({
           name: '',
@@ -125,6 +158,37 @@ import React from 'react';
           status: 'active'
         });
         fetchClients();
+      };
+
+      // Function to handle template creation
+      const handleCreateTemplate = async (templateData: Omit<Template, 'id' | 'created_by' | 'created_at' | 'updated_at'>) => {
+        setError('');
+        setSuccess('');
+
+        if (!user) {
+          setError('You must be logged in to create a template.');
+          throw new Error('User not authenticated'); // Prevent further execution
+        }
+
+        try {
+          const { error: insertError } = await supabase
+            .from('templates')
+            .insert([{
+              ...templateData,
+              created_by: user.id // Add the user ID here
+            }]);
+
+          if (insertError) throw insertError;
+
+          setSuccess('Template created successfully!');
+          setShowAddTemplateModal(false);
+          fetchTemplates(); // Refresh the list
+        } catch (err) {
+          setError(err instanceof Error ? err.message : 'Failed to create template.');
+          console.error('Error creating template:', err);
+          // Re-throw the error so the modal can catch it and display it
+          throw err;
+        }
       };
 
       const StatCard: React.FC<{
@@ -195,6 +259,17 @@ import React from 'react';
               Manage users, clients, and system settings
             </p>
           </div>
+
+          {error && (
+            <div className="bg-red-50 text-red-700 p-4 rounded-md">
+              {error}
+            </div>
+          )}
+          {success && (
+            <div className="bg-green-50 text-green-700 p-4 rounded-md">
+              {success}
+            </div>
+          )}
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-4">
             <StatCard
@@ -376,6 +451,68 @@ import React from 'react';
             </div>
           </div>
 
+          {/* Templates Section */}
+          <div className="bg-white shadow-sm rounded-xl border border-gray-100">
+            <div className="p-6 border-b border-gray-100">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900">Templates</h3>
+                  <p className="mt-1 text-sm text-gray-500">
+                    Manage reusable templates
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowAddTemplateModal(true)} // Open the modal
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-indigo-600 hover:bg-indigo-700"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Template {/* Renamed button */}
+                </button>
+              </div>
+            </div>
+
+            <div className="divide-y divide-gray-100">
+              {templates.length === 0 ? (
+                <div className="p-6 text-center text-gray-500">No templates found.</div>
+              ) : (
+                templates.slice(0, 5).map((template) => (
+                  <div
+                    key={template.id}
+                    className="p-4 hover:bg-gray-50 cursor-pointer transition-colors"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3">
+                        <div className="flex-shrink-0">
+                          <div className="h-10 w-10 rounded-lg bg-green-50 flex items-center justify-center">
+                            <FileText className="h-5 w-5 text-green-600" />
+                          </div>
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">{template.name}</p>
+                          <p className="text-sm text-gray-500">Type: {template.type}</p>
+                        </div>
+                      </div>
+                      <span className="text-xs text-gray-400">
+                        Created: {new Date(template.created_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {templates.length > 5 && (
+              <div className="p-4 border-t border-gray-100">
+                <button
+                  onClick={() => { /* TODO: Navigate to template management page */ }}
+                  className="text-sm text-indigo-600 hover:text-indigo-900 font-medium"
+                >
+                  View all templates
+                </button>
+              </div>
+            )}
+          </div>
+
           {/* Add Client Modal */}
           {showClientModal && (
             <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4 z-50">
@@ -481,6 +618,14 @@ import React from 'react';
                 </form>
               </div>
             </div>
+          )}
+
+          {/* Add Template Modal */}
+          {showAddTemplateModal && (
+            <AddTemplateModal
+              onClose={() => setShowAddTemplateModal(false)}
+              onSubmit={handleCreateTemplate}
+            />
           )}
         </div>
       );
