@@ -18,8 +18,10 @@ import React, { useState, useEffect } from 'react';
       FileText
     } from 'lucide-react';
     import { supabase } from '../lib/supabase';
+    import { useAuth } from '../context/AuthContext';
     import { AddTemplateModal } from './modals/AddTemplateModal';
-    import { useAuth } from '../context/AuthContext'; // Import useAuth
+    import { EditTemplateModal } from './modals/EditTemplateModal';
+    import { ViewTemplateModal } from './modals/ViewTemplateModal'; // Import the View modal
 
     interface Client {
       id: string;
@@ -41,8 +43,8 @@ import React, { useState, useEffect } from 'react';
     }
 
     export const AdminDashboard: React.FC = () => {
-      const { state: authState } = useAuth(); // Get auth state
-      const { user } = authState; // Destructure user from auth state
+      const { state: authState } = useAuth();
+      const { user } = authState;
       const [users, setUsers] = useState<any[]>([]);
       const [clients, setClients] = useState<Client[]>([]);
       const [templates, setTemplates] = useState<Template[]>([]);
@@ -52,7 +54,11 @@ import React, { useState, useEffect } from 'react';
       const [isLoading, setIsLoading] = useState(true);
       const navigate = useNavigate();
       const [showClientModal, setShowClientModal] = useState(false);
-      const [showAddTemplateModal, setShowAddTemplateModal] = useState(false); // State for template modal
+      const [showAddTemplateModal, setShowAddTemplateModal] = useState(false);
+      const [showEditTemplateModal, setShowEditTemplateModal] = useState(false);
+      const [showViewTemplateModal, setShowViewTemplateModal] = useState(false); // State for view modal
+      const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
+      const [viewingTemplate, setViewingTemplate] = useState<Template | null>(null); // State for template being viewed
       const [newClient, setNewClient] = useState<Partial<Client>>({
         name: '',
         email: '',
@@ -61,7 +67,7 @@ import React, { useState, useEffect } from 'react';
         status: 'active'
       });
       const [error, setError] = useState('');
-      const [success, setSuccess] = useState(''); // Added success state
+      const [success, setSuccess] = useState('');
 
       useEffect(() => {
         fetchDashboardData();
@@ -81,6 +87,7 @@ import React, { useState, useEffect } from 'react';
         }
       };
 
+      // --- Fetch functions remain the same ---
       const fetchLeadStats = async () => {
         const { data: leadsData } = await supabase
           .from('client_leads')
@@ -128,6 +135,8 @@ import React, { useState, useEffect } from 'react';
           setTemplates(data);
         }
       };
+      // --- End Fetch functions ---
+
 
       const handleCreateClient = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -160,14 +169,13 @@ import React, { useState, useEffect } from 'react';
         fetchClients();
       };
 
-      // Function to handle template creation
       const handleCreateTemplate = async (templateData: Omit<Template, 'id' | 'created_by' | 'created_at' | 'updated_at'>) => {
         setError('');
         setSuccess('');
 
         if (!user) {
           setError('You must be logged in to create a template.');
-          throw new Error('User not authenticated'); // Prevent further execution
+          throw new Error('User not authenticated');
         }
 
         try {
@@ -175,22 +183,63 @@ import React, { useState, useEffect } from 'react';
             .from('templates')
             .insert([{
               ...templateData,
-              created_by: user.id // Add the user ID here
+              created_by: user.id
             }]);
 
           if (insertError) throw insertError;
 
           setSuccess('Template created successfully!');
           setShowAddTemplateModal(false);
-          fetchTemplates(); // Refresh the list
+          fetchTemplates();
         } catch (err) {
           setError(err instanceof Error ? err.message : 'Failed to create template.');
           console.error('Error creating template:', err);
-          // Re-throw the error so the modal can catch it and display it
           throw err;
         }
       };
 
+      const handleUpdateTemplate = async (templateId: string, updatedData: Partial<Template>) => {
+        setError('');
+        setSuccess('');
+        try {
+          const { error: updateError } = await supabase
+            .from('templates')
+            .update({
+              name: updatedData.name,
+              type: updatedData.type,
+              prompt: updatedData.prompt,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', templateId);
+
+          if (updateError) throw updateError;
+
+          setSuccess('Template updated successfully!');
+          setShowEditTemplateModal(false); // Close edit modal
+          setEditingTemplate(null);
+          fetchTemplates();
+        } catch (err) {
+          setError(err instanceof Error ? err.message : 'Failed to update template.');
+          console.error('Error updating template:', err);
+          throw err; // Re-throw for the modal to handle
+        }
+      };
+
+      // Function to open the view modal
+      const openViewModal = (template: Template) => {
+        setViewingTemplate(template);
+        setShowViewTemplateModal(true);
+      };
+
+      // Function called when 'Edit' is clicked in the View modal
+      const handleEditFromView = (template: Template) => {
+        setShowViewTemplateModal(false); // Close view modal
+        setViewingTemplate(null);
+        setEditingTemplate(template); // Set template for editing
+        setShowEditTemplateModal(true); // Open edit modal
+      };
+
+      // --- StatCard and QuickAction components remain the same ---
       const StatCard: React.FC<{
         title: string;
         value: string | number;
@@ -242,6 +291,8 @@ import React, { useState, useEffect } from 'react';
           <ChevronRight className="h-5 w-5 text-gray-400 group-hover:text-gray-600 transition-colors" />
         </button>
       );
+      // --- End StatCard and QuickAction ---
+
 
       if (isLoading) {
         return (
@@ -271,6 +322,7 @@ import React, { useState, useEffect } from 'react';
             </div>
           )}
 
+          {/* Stats Grid */}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-4">
             <StatCard
               title="Total Leads"
@@ -304,6 +356,7 @@ import React, { useState, useEffect } from 'react';
             />
           </div>
 
+          {/* Quick Actions */}
           <div>
             <h3 className="text-lg font-medium text-gray-900 mb-4">Quick Actions</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -328,6 +381,7 @@ import React, { useState, useEffect } from 'react';
             </div>
           </div>
 
+          {/* Main Content Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             {/* Clients Section */}
             <div className="bg-white shadow-sm rounded-xl border border-gray-100">
@@ -462,11 +516,11 @@ import React, { useState, useEffect } from 'react';
                   </p>
                 </div>
                 <button
-                  onClick={() => setShowAddTemplateModal(true)} // Open the modal
+                  onClick={() => setShowAddTemplateModal(true)}
                   className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-indigo-600 hover:bg-indigo-700"
                 >
                   <Plus className="h-4 w-4 mr-2" />
-                  Add Template {/* Renamed button */}
+                  Add Template
                 </button>
               </div>
             </div>
@@ -478,6 +532,7 @@ import React, { useState, useEffect } from 'react';
                 templates.slice(0, 5).map((template) => (
                   <div
                     key={template.id}
+                    onClick={() => openViewModal(template)} // Changed onClick handler
                     className="p-4 hover:bg-gray-50 cursor-pointer transition-colors"
                   >
                     <div className="flex items-center justify-between">
@@ -625,6 +680,30 @@ import React, { useState, useEffect } from 'react';
             <AddTemplateModal
               onClose={() => setShowAddTemplateModal(false)}
               onSubmit={handleCreateTemplate}
+            />
+          )}
+
+          {/* View Template Modal */}
+          {showViewTemplateModal && viewingTemplate && (
+            <ViewTemplateModal
+              template={viewingTemplate}
+              onClose={() => {
+                setShowViewTemplateModal(false);
+                setViewingTemplate(null);
+              }}
+              onEdit={handleEditFromView} // Pass the handler
+            />
+          )}
+
+          {/* Edit Template Modal */}
+          {showEditTemplateModal && editingTemplate && (
+            <EditTemplateModal
+              template={editingTemplate}
+              onClose={() => {
+                setShowEditTemplateModal(false);
+                setEditingTemplate(null);
+              }}
+              onSubmit={handleUpdateTemplate}
             />
           )}
         </div>
