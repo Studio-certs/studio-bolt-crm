@@ -63,52 +63,52 @@ import React, { useState } from 'react';
             return;
         }
 
-        const apiUrl = import.meta.env.VITE_EMAIL_GENERATION_API_URL;
-        if (!apiUrl) {
-            setModalError('Email generation API URL is not configured in .env file.');
+        // --- CHANGE: Use the Supabase function URL ---
+        const proxyApiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-email-proxy`;
+        // --- END CHANGE ---
+
+        if (!proxyApiUrl) {
+            setModalError('Supabase URL is not configured.'); // Should not happen if VITE_SUPABASE_URL is set
             return;
         }
 
         setIsGenerating(true);
-        console.log("Calling AI API with data:", formData);
+        console.log("Calling Supabase proxy function with data:", formData);
 
         try {
-          const response = await fetch(apiUrl, {
+          const response = await fetch(proxyApiUrl, { // Call the proxy function
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'Accept': 'application/json', // Explicitly accept JSON
+              'Accept': 'application/json',
+              // Supabase functions called from the client usually need the Authorization header
+              // Assuming supabase-js handles this automatically if called from an authenticated session context
+              // If not, you might need to manually add:
+              // 'Authorization': `Bearer ${supabase.auth.session()?.access_token}`
             },
             body: JSON.stringify(formData),
           });
 
-          // Check if response is ok (status in the range 200-299)
           if (!response.ok) {
-            let errorMsg = `API Error: ${response.status} ${response.statusText}`;
+            let errorMsg = `API Proxy Error: ${response.status} ${response.statusText}`;
             try {
-                // Try to parse error details from the response body
                 const errorBody = await response.json();
-                errorMsg = errorBody.detail || errorBody.message || errorMsg;
-            } catch (parseError) {
-                // Ignore if the error body isn't JSON
-            }
+                errorMsg = errorBody.error || errorMsg; // Supabase functions often return { error: "message" }
+            } catch (parseError) { /* Ignore */ }
             throw new Error(errorMsg);
           }
 
-          // Parse the successful JSON response
           const result: GeneratedEmail = await response.json();
 
-          // Validate the structure of the response
           if (!result || typeof result.subject !== 'string' || typeof result.body !== 'string') {
-              throw new Error('Invalid response format received from AI API.');
+              throw new Error('Invalid response format received from AI API via proxy.');
           }
 
-          // Pass the generated content back to the EmailForm
           onEmailGenerated(result.subject, result.body);
-          onClose(); // Close modal on success
+          onClose();
 
         } catch (err) {
-          console.error("AI Generation Error:", err);
+          console.error("AI Generation Error (via proxy):", err);
           setModalError(err instanceof Error ? err.message : 'AI Generation failed.');
         } finally {
           setIsGenerating(false);
